@@ -18,6 +18,7 @@ byteorder = "0.3"
 
 [build-dependencies]
 napi-build = "2"
+cc = "1.0"
 
 [dev-dependencies]
 ucs2 = "0.3.2"

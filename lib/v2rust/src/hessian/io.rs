@@ -4,6 +4,11 @@ use std::io::Write;
 use std::ops::{Index, IndexMut};
 use std::simd::{Simd, SimdPartialOrd};
 
+#[link(name = "fast_memcpy")]
+extern "C" {
+    fn memcpy_fast(des: *const u8, source: *const u8, len: usize);
+}
+
 pub struct OutPut<'a, T> {
     data: &'a mut [T],
     cursor: usize,
@@ -206,7 +211,7 @@ impl<'a> OutPut<'a, u8> {
     pub fn push_map_type(
         &mut self,
         field_string: &str, // key的组合，用 , 分隔
-        field_len: u32,        // key的数量，用来校验 field_string 分隔后的产物
+        field_len: u32,     // key的数量，用来校验 field_string 分隔后的产物
         cache: &mut State,
         set_cache: &dyn Fn(String, u32, bool) -> u32,
     ) {
@@ -236,7 +241,6 @@ impl<'a> OutPut<'a, u8> {
         }
     }
 }
-
 
 // 用来回写u16到buffer
 impl<'a> OutPut<'a, u16> {
@@ -349,10 +353,7 @@ impl<'a> Input<'a> {
     }
 
     // 跳过utf8 字符串
-    pub fn skip_utf8(
-        &mut self,
-        size: usize,
-    ) {
+    pub fn skip_utf8(&mut self, size: usize) {
         // 首先用simd假设它是单字节的，因为单字节最常见
         let start = self.get_rpos();
         // 单字节长度 simd
@@ -419,7 +420,19 @@ impl<'a> Input<'a> {
         if size == used {
             self.set_rpos(start + used);
             let latin1_start = latin1_string_ret.cursor();
-            latin1_string_ret.write(self.data.index(start..start + used));
+            
+            unsafe {
+                memcpy_fast(
+                    latin1_string_ret
+                        .data
+                        .as_ptr()
+                        .offset(latin1_string_ret.cursor() as isize),
+                    self.data.as_ptr().offset(start as isize),
+                    used,
+                );
+                latin1_string_ret.cursor += used;
+            }
+            //latin1_string_ret.write(self.data.index(start..start + used));
             output.push_string(
                 MagicCode::Latin1String as u8,
                 latin1_start as u32,
